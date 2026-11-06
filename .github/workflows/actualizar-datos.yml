@@ -1,0 +1,49 @@
+name: Actualizar datos desde Drive
+
+on:
+  schedule:
+    - cron: "0 9 * * *"   # todos los días, 06:00 hora argentina
+  workflow_dispatch:       # botón "Run workflow" para actualizar a mano
+
+permissions:
+  contents: write
+
+env:
+  DRIVE_ID: 17y660CVH_NVI9Lkkv5AorTRUa6gwAU5a
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar el TSV de Drive
+        run: |
+          curl -sSfL --retry 3 -o nuevo.tsv \
+            "https://drive.usercontent.google.com/download?id=${DRIVE_ID}&export=download&confirm=t"
+          sed -i '1s/^\xEF\xBB\xBF//' nuevo.tsv
+
+      - name: Validar el archivo
+        run: |
+          header=$(head -1 nuevo.tsv | tr -d '\r' | tr '\t' '\n')
+          for c in legislador clave distrito mandato anio bloque_inicio bloque_fin \
+                   transfuguismo_sustantivo transfuguismo_formal lealtad; do
+            echo "$header" | grep -qx "$c" || { echo "Falta la columna $c (¿el archivo es público y es el panel correcto?)"; exit 1; }
+          done
+          filas=$(($(grep -c . nuevo.tsv) - 1))
+          [ "$filas" -ge 1000 ] || { echo "Muy pocas filas ($filas)"; exit 1; }
+          echo "FILAS=$filas" >> "$GITHUB_ENV"
+
+      - name: Guardar si cambió
+        run: |
+          if [ -f data.tsv ] && cmp -s nuevo.tsv data.tsv; then
+            echo "Sin cambios en Drive."; rm nuevo.tsv; exit 0
+          fi
+          mv nuevo.tsv data.tsv
+          fecha=$(TZ=America/Argentina/Buenos_Aires date +%d/%m/%Y)
+          printf '{"actualizado":"%s","filas":%s}\n' "$fecha" "$FILAS" > data-info.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data.tsv data-info.json
+          git commit -m "Actualizar datos desde Drive ($fecha)"
+          git push

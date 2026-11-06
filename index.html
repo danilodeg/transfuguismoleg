@@ -11486,12 +11486,25 @@ $("file").addEventListener("change",async()=>{
   }catch(e){ msg("No se pudo leer el archivo. "+e.message,true); }
   $("file").value="";
 });
-$("resetBtn").addEventListener("click",()=>{store.del("tf_file");store.del("tf_label");setData(parse($("snapshot").textContent),SNAP_LABEL,false);msg("Volviste a la instantánea incluida.")});
+// Base publicada: data.tsv (actualizado a diario desde Drive). La instantánea interna es el respaldo.
+let BASE=null;
+const useBase=()=>{ if(BASE) setData(BASE.rows,BASE.label,false); else setData(parse($("snapshot").textContent),SNAP_LABEL,false); };
+async function loadPublished(){
+  try{
+    const r=await fetch("data.tsv",{cache:"no-cache"}); if(!r.ok) throw 0;
+    const rows=parse(await r.text()); if(!rows.length) throw 0;
+    let label="Datos de Drive";
+    try{ const i=await (await fetch("data-info.json",{cache:"no-cache"})).json(); if(i.actualizado) label="Actualizado "+i.actualizado; }catch(e){}
+    BASE={rows,label}; return true;
+  }catch(e){ return false; }
+}
+$("resetBtn").addEventListener("click",()=>{store.del("tf_file");store.del("tf_label");useBase();msg("Volviste a la base publicada.")});
 
 // boot
 let booted=false; const saved=store.get("tf_file");
 if(saved){ try{ setData(parse(saved),store.get("tf_label")||"Archivo cargado",true); booted=true; }catch(e){} }
 if(!booted) setData(parse($("snapshot").textContent),SNAP_LABEL,false);
+loadPublished().then(ok=>{ if(ok && !booted) useBase(); });
 const tab=location.hash.replace("#","")||store.get("tf_tab"); if(["serie","bloques","leg"].includes(tab)) setTab(tab);
 })();
 </script>
